@@ -1,0 +1,78 @@
+name: on-pullrequest
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '**.re'
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+env:
+  GH_TOKEN: ${{ github.token }}
+  BEDROCK_INPUT_TOKEN_PRICE: 0.00025
+  BEDROCK_OUTPUT_TOKEN_PRICE: 0.00125
+
+jobs:
+  check-files:
+    runs-on: ubuntu-latest
+    outputs:
+      all_changed_files: ${{ steps.changed-files.outputs.all_changed_files }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v44
+        with:
+          files: |
+             **.re
+          matrix: "true"
+
+      - name: List all changed files
+        run: echo '${{ steps.changed-files.outputs.all_changed_files }}'
+
+  invoke-model:
+    needs: check-files
+    strategy:
+      matrix:
+        article: ${{ fromJson(needs.check-files.outputs.all_changed_files) }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get AWS OIDC Role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: 'ap-northeast-1'
+          role-to-assume: ${{ vars.AWS_ROLE }}
+
+      - name: Run run.sh
+        env:
+          AWS_BEDROCK_MODEL_ID: ${{ vars.AWS_BEDROCK_MODEL_ID }}
+          AWS_BEDROCK_REGION: ${{ vars.AWS_BEDROCK_REGION }}
+          PR_NUMBER: ${{ github.event.number }}
+        run: |
+          bash .github/script/run.sh .github/prompt/system.txt ${{ matrix.article }}
+
+          response_body=`cat outfile.json | jq -r -c '.content[-1].text'`
+          input_tokens=`cat outfile.json | jq -r .usage.input_tokens`
+          output_tokens=`cat outfile.json | jq -r .usage.output_tokens`
+
+          input_cost=`awk "BEGIN { print (${BEDROCK_INPUT_TOKEN_PRICE} / 1000) * ${input_tokens} }"`
+          output_cost=`awk "BEGIN { print (${BEDROCK_OUTPUT_TOKEN_PRICE} / 1000) * ${output_tokens} }"`
+          total_cost=`awk "BEGIN { print ${input_cost} + ${output_cost} }"`
+
+          body=`cat .github/template.txt`
+          body="${body//<BODY>/$response_body}"
+          body="${body//<INPUT_COST>/$input_cost}"
+          body="${body//<OUTPUT_COST>/$output_cost}"
+          body="${body//<TOTAL_COST>/$total_cost}"
+
+          gh pr comment "${PR_NUMBER}" -b "${body}"

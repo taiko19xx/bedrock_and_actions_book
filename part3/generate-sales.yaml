@@ -1,0 +1,36 @@
+name: generate-sales
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read  
+  issues: write
+
+env:
+  ISSUE_NUMBER: （文章用Issueの番号）
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  comment:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get AWS OIDC Role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: 'ap-northeast-1'
+          role-to-assume: ${{ vars.AWS_ROLE }}
+
+      - name: Run Sales
+        env:
+          AWS_BEDROCK_MODEL_ID: ${{ vars.AWS_BEDROCK_MODEL_ID }}
+          AWS_BEDROCK_REGION: ${{ vars.AWS_BEDROCK_REGION }}
+        run: |
+          bash .github/script/catalog.sh ./articles >> /tmp/article.txt
+          bash .github/script/run.sh .github/prompt/system_sales.txt /tmp/article.txt
+          body=`cat outfile.json | jq -r -c '.content[-1].text'`
+          gh issue comment "${ISSUE_NUMBER}" -b "${body}"

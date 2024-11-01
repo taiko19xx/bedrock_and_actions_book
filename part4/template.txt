@@ -1,0 +1,10 @@
+<BODY>
+
+---
+
+<details>
+<summary>コスト</summary>
+Input: $<INPUT_COST>
+Output: $<OUTPUT_COST>
+Total: $<TOTAL_COST>
+</details>

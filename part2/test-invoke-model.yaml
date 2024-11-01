@@ -1,0 +1,23 @@
+name: test-invoke-model
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read  
+
+jobs:
+  invoke-model:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get AWS OIDC Role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: 'ap-northeast-1'
+          role-to-assume: ${{ vars.AWS_ROLE }}
+
+      - name: run aws cli
+        run: |
+          aws bedrock-runtime invoke-model --model-id ${{ vars.AWS_BEDROCK_MODEL_ID }} --content-type "application/json" --body "{\"anthropic_version\":\"bedrock-2023-05-31\",\"max_tokens\":1000,\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"こんにちは。何をお手伝いできますか？\"}]}]}" outfile.json --region ${{ vars.AWS_BEDROCK_REGION }} --cli-binary-format raw-in-base64-out
+          cat outfile.json
